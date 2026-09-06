@@ -34,14 +34,16 @@ def test_public_surface_registry_is_policy_only_not_transport_implementation() -
 
 
 def test_product_runtime_still_has_no_legacy_write_fallback() -> None:
-    source = (SRC / "product_runtime.py").read_text(encoding="utf-8")
+    shell = (SRC / "product_runtime.py").read_text(encoding="utf-8")
+    core = (SRC / "product_runtime_core.py").read_text(encoding="utf-8")
 
-    assert '"fallback_transport": None' in source
-    assert '"legacy_direct_write_fallback": False' in source
-    assert "self.client.send(" not in source
-    assert "send_to_conversation(" not in source
-    assert "send_payload(" not in source
-    assert "auto_sentinel=False" in source
+    assert '"fallback_transport": None' in core
+    assert '"legacy_direct_write_fallback": False' in core
+    for source in (shell, core):
+        assert "self.client.send(" not in source
+        assert "send_to_conversation(" not in source
+        assert "send_payload(" not in source
+    assert "auto_sentinel=False" in shell
 
 
 def test_legacy_and_low_level_symbols_remain_present_for_compatibility() -> None:

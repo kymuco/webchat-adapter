@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 from functools import wraps
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from .browser_native_client import _provider_supports_revision_safe_streaming
-from .browser_owned_product_transport import BrowserOwnedProductTransport
 from .product_capabilities import (
     WEB_SEARCH,
     CapabilityState,
     ProductCapabilities,
     ProductCapability,
 )
+
+if TYPE_CHECKING:
+    from .browser_owned_product_transport import BrowserOwnedProductTransport
 
 _PR93_WEB_SEARCH_CAPABILITY_GATE_MARKER = "__pr93_web_search_capability_gate__"
 _PR93_WEB_SEARCH_LIVE_EVIDENCE = (
@@ -26,21 +28,23 @@ _PR93_WEB_SEARCH_LIVE_EVIDENCE = (
 def gate_browser_owned_web_search_capability(
     capabilities: Callable[..., ProductCapabilities],
 ) -> Callable[..., ProductCapabilities]:
-    """Graduate WEB_SEARCH only for providers with the proven observation channel.
-
-    PR9.3 live evidence applies to the browser-owned revision-safe observation path.
-    Custom/legacy providers that do not expose that path must remain UNKNOWN rather
-    than inheriting a capability claim they cannot observe.
-    """
+    """Graduate WEB_SEARCH only for providers with the proven observation channel."""
 
     if getattr(capabilities, _PR93_WEB_SEARCH_CAPABILITY_GATE_MARKER, False):
         return capabilities
 
     @wraps(capabilities)
-    def gated(self: BrowserOwnedProductTransport, *args: Any, **kwargs: Any) -> ProductCapabilities:
+    def gated(
+        self: BrowserOwnedProductTransport,
+        *args: Any,
+        **kwargs: Any,
+    ) -> ProductCapabilities:
         declared = capabilities(self, *args, **kwargs)
         if not isinstance(declared, ProductCapabilities):
-            raise TypeError("BrowserOwnedProductTransport.capabilities() must return ProductCapabilities")
+            raise TypeError(
+                "BrowserOwnedProductTransport.capabilities() must return "
+                "ProductCapabilities"
+            )
 
         current = declared.get(WEB_SEARCH)
         if current is None or current.state is not CapabilityState.UNKNOWN:
@@ -72,5 +76,11 @@ def gate_browser_owned_web_search_capability(
 
 
 def install_browser_owned_web_search_capability_gate() -> None:
+    """Compatibility installer for callers that explicitly request legacy wiring."""
+
+    from .browser_owned_product_transport import BrowserOwnedProductTransport
+
     current = BrowserOwnedProductTransport.capabilities
-    BrowserOwnedProductTransport.capabilities = gate_browser_owned_web_search_capability(current)
+    BrowserOwnedProductTransport.capabilities = gate_browser_owned_web_search_capability(
+        current
+    )

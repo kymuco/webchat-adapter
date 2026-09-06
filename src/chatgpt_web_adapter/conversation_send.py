@@ -2,8 +2,14 @@ from __future__ import annotations
 
 from typing import Any, Callable, Sequence
 
-from .client import DEFAULT_MODEL
-from .types import AttachedConversation, ChatConversation, ChatResponse, ConversationRef, MediaItem
+from .model_registry import DEFAULT_MODEL
+from .types import (
+    AttachedConversation,
+    ChatConversation,
+    ChatResponse,
+    ConversationRef,
+    MediaItem,
+)
 
 
 def _resolve_send_model(

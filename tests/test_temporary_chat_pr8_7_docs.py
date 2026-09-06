@@ -8,7 +8,12 @@ DOC = ROOT / "docs" / "temporary_chat_pr8_7.md"
 LIVE_DOC = ROOT / "docs" / "temporary_chat_pr8_7_live_characterization.md"
 REVIEW_DOC = ROOT / "docs" / "temporary_chat_pr8_7_capability_graduation_review.md"
 CLOSURE_DOC = ROOT / "docs" / "temporary_chat_pr8_13_closure.md"
-TRANSPORT = ROOT / "src" / "chatgpt_web_adapter" / "browser_owned_product_transport.py"
+TRANSPORT = (
+    ROOT
+    / "src"
+    / "chatgpt_web_adapter"
+    / "browser_owned_product_transport_core.py"
+)
 
 
 def test_pr87_docs_keep_temporary_chat_evidence_first_and_fail_closed() -> None:

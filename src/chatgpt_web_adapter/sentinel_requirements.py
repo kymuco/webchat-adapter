@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from . import client as client_mod
+from . import legacy_client_core as client_mod
 from .auth import CHAT_URL
 from .web_session import suppress_web_session_debug_trace
 

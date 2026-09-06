@@ -43,7 +43,9 @@ def test_capability_model_does_not_collapse_four_states_to_boolean() -> None:
 
 def test_pr85_does_not_modify_proven_browser_write_runtime_or_extension_contract() -> None:
     writer = (SRC / "browser_owned_write_runtime.py").read_text(encoding="utf-8")
-    adapter = (SRC / "browser_owned_product_transport.py").read_text(encoding="utf-8")
+    adapter = (SRC / "browser_owned_product_transport_core.py").read_text(
+        encoding="utf-8"
+    )
 
     assert "class BrowserOwnedProductWriteRuntime" in writer
     assert "self._runtime.send_text(" in adapter

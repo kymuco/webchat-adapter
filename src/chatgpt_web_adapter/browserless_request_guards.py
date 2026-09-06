@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from contextvars import ContextVar
-from functools import wraps
 import time as _stdlib_time
+from contextvars import ContextVar
+from functools import update_wrapper, wraps
+from types import FunctionType
 from typing import Any, Callable
 
 from .browserless_request_scope import _BROWSERLESS_REQUEST_SCOPE_OWNER
@@ -15,13 +16,7 @@ _POLL_SLEEP_DEADLINE: ContextVar[float | None] = ContextVar(
 
 
 class _DeadlineAwareClientTime:
-    """Proxy the client module's time API while clamping scoped poll sleeps.
-
-    The proxy is permanently installed only in ``chatgpt_web_adapter.client``.
-    Outside a browserless poll context every attribute and every sleep delegates
-    unchanged to the original time module. This avoids mutating global
-    ``time.sleep`` and keeps ordinary/public callers outside browserless policy.
-    """
+    """Proxy a client method's time API while clamping scoped poll sleeps."""
 
     _cwa_browserless_poll_time_proxy = True
 
@@ -44,30 +39,42 @@ class _DeadlineAwareClientTime:
         self._delegate.sleep(min(requested, remaining))
 
 
-def install_browserless_poll_deadline_guard(
-    client_module: Any,
-    client_class: type[Any],
-) -> None:
-    """Make browserless recovery polling honor its already-bounded timeout.
+def _deadline_aware_poll_clone(original: Callable[..., Any]) -> Callable[..., Any]:
+    """Clone a legacy poller with a private deadline-aware ``time`` global.
 
-    PR9.1 already passes the remaining total invocation budget into
-    ``_poll_conversation_after_prepare(timeout=...)``. The legacy poller enforces
-    a 0.5 second minimum sleep, which can overrun a shorter remaining budget.
-    This guard leaves ordinary polling untouched and only clamps sleeps while the
-    call executes inside the browserless request ContextVar.
+    The historical method can stay byte-identical in the legacy core. Only the
+    cloned function sees the proxy, so no module global or stdlib ``time`` object
+    is mutated during import or execution.
     """
 
-    current_time = getattr(client_module, "time", None)
-    if current_time is None:
-        raise RuntimeError("client module does not expose time")
-    if not getattr(current_time, "_cwa_browserless_poll_time_proxy", False):
-        client_module.time = _DeadlineAwareClientTime(current_time)
+    if not isinstance(original, FunctionType):
+        raise TypeError("browserless poll deadline guard requires a Python function")
+    delegate_time = original.__globals__.get("time")
+    if delegate_time is None:
+        raise RuntimeError("conversation recovery poller does not expose time")
+    guarded_globals = dict(original.__globals__)
+    guarded_globals["time"] = _DeadlineAwareClientTime(delegate_time)
+    cloned = FunctionType(
+        original.__code__,
+        guarded_globals,
+        original.__name__,
+        original.__defaults__,
+        original.__closure__,
+    )
+    cloned.__kwdefaults__ = original.__kwdefaults__
+    cloned.__annotations__ = dict(getattr(original, "__annotations__", {}))
+    update_wrapper(cloned, original)
+    return cloned
 
-    original = getattr(client_class, "_poll_conversation_after_prepare", None)
-    if not callable(original):
-        raise RuntimeError("ChatGPTWebClient is missing conversation recovery polling")
+
+def gate_browserless_poll_deadline(
+    original: Callable[..., Any],
+) -> Callable[..., Any]:
+    """Return a statically composable browserless deadline guard."""
+
     if getattr(original, "_cwa_browserless_poll_deadline_guard", False):
-        return
+        return original
+    guarded_original = _deadline_aware_poll_clone(original)
 
     @wraps(original)
     def poll(
@@ -82,8 +89,13 @@ def install_browserless_poll_deadline_guard(
         reason: str = "approval_poll",
         allow_global_fallback: bool = True,
     ) -> Any:
-        if _BROWSERLESS_REQUEST_SCOPE_OWNER.get() is None:
-            return original(
+        target = (
+            original
+            if _BROWSERLESS_REQUEST_SCOPE_OWNER.get() is None
+            else guarded_original
+        )
+        if target is original:
+            return target(
                 self,
                 conversation_id,
                 previous_message_id=previous_message_id,
@@ -98,7 +110,7 @@ def install_browserless_poll_deadline_guard(
         deadline = _stdlib_time.monotonic() + max(0.0, float(timeout))
         token = _POLL_SLEEP_DEADLINE.set(deadline)
         try:
-            return original(
+            return target(
                 self,
                 conversation_id,
                 previous_message_id=previous_message_id,
@@ -112,8 +124,28 @@ def install_browserless_poll_deadline_guard(
         finally:
             _POLL_SLEEP_DEADLINE.reset(token)
 
-    poll._cwa_browserless_poll_deadline_guard = True  # type: ignore[attr-defined]
-    client_class._poll_conversation_after_prepare = poll
+    setattr(poll, "_cwa_browserless_poll_deadline_guard", True)
+    return poll
+
+
+def install_browserless_poll_deadline_guard(
+    client_module: Any,
+    client_class: type[Any],
+) -> None:
+    """Compatibility installer for callers that still request the old surface.
+
+    New production composition uses :func:`gate_browserless_poll_deadline` inside
+    the public client class body and therefore performs no import-time mutation.
+    ``client_module`` is retained only for source compatibility.
+    """
+
+    del client_module
+    original = getattr(client_class, "_poll_conversation_after_prepare", None)
+    if not callable(original):
+        raise RuntimeError("ChatGPTWebClient is missing conversation recovery polling")
+    client_class._poll_conversation_after_prepare = gate_browserless_poll_deadline(
+        original
+    )
 
 
 def _normalized_message_id(value: Any) -> str | None:
@@ -156,10 +188,6 @@ class _SubmittedTurnCanonicalClientView:
         )
         if status_message_id == self._submitted_message_id:
             return status
-        # Canonical reads can briefly remain on the previously completed turn
-        # after the write has committed. Keep the underlying poll alive while
-        # budget remains rather than converting that eventual-consistency window
-        # into a false reconciliation failure.
         return _StaleCompletedStatusView(status)
 
 

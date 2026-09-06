@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 from functools import wraps
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
-from .browser_owned_product_transport import BrowserOwnedProductTransport
 from .product_capabilities import (
     FILES,
     IMAGES,
@@ -13,6 +12,9 @@ from .product_capabilities import (
     ProductCapability,
 )
 from .product_model_profile_pr8_10 import ProductModelProfileProvider
+
+if TYPE_CHECKING:
+    from .browser_owned_product_transport import BrowserOwnedProductTransport
 
 _PR94_RICH_INPUT_CAPABILITY_GATE_MARKER = "__pr94_rich_input_capability_gate__"
 _PR94_RICH_INPUT_CAPABILITY_NAMES = frozenset(
@@ -40,14 +42,7 @@ def _uses_frozen_bound_implementation(
 
 
 def _provider_uses_proven_pr92_rich_input_path(provider: Any) -> bool:
-    """Return whether a provider preserves the live-proven PR9.2 write path.
-
-    The PR9.2 live provider subclasses ProductModelProfileProvider only to add
-    characterization RPCs; the actual write/RPC implementation is inherited unchanged.
-    A custom provider, class override, or instance-level replacement of either send_text
-    or _rpc must not inherit rich-input capability authority merely because it shares the
-    browser-owned transport.
-    """
+    """Return whether a provider preserves the live-proven PR9.2 write path."""
 
     if not isinstance(provider, ProductModelProfileProvider):
         return False
@@ -82,7 +77,8 @@ def gate_browser_owned_rich_input_capabilities(
         declared = capabilities(self, *args, **kwargs)
         if not isinstance(declared, ProductCapabilities):
             raise TypeError(
-                "BrowserOwnedProductTransport.capabilities() must return ProductCapabilities"
+                "BrowserOwnedProductTransport.capabilities() must return "
+                "ProductCapabilities"
             )
 
         provider = getattr(self, "provider", None)
@@ -121,6 +117,10 @@ def gate_browser_owned_rich_input_capabilities(
 
 
 def install_browser_owned_rich_input_capability_gate() -> None:
+    """Compatibility installer for callers that explicitly request legacy wiring."""
+
+    from .browser_owned_product_transport import BrowserOwnedProductTransport
+
     current = BrowserOwnedProductTransport.capabilities
     BrowserOwnedProductTransport.capabilities = gate_browser_owned_rich_input_capabilities(
         current

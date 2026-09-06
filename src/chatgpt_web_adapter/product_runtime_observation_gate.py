@@ -4,53 +4,10 @@ from dataclasses import replace
 from functools import wraps
 from typing import Any, Callable
 
-from .product_activity_kind_precedence_pr9_3 import (
-    install_product_activity_kind_precedence,
-)
 from .product_artifact_observation_pr10_1 import ProductArtifactObservationCollector
-from .product_rich_input_capability_gate_pr9_4 import (
-    install_browser_owned_rich_input_capability_gate,
-)
-from .product_runtime import ChatGPTProductRuntime
-from .product_submission_runtime_gate import install_product_submission_runtime_surface
 from .product_transport import ProductRuntimeExecution
-from .product_ui_liveness_runtime_gate import (
-    install_product_ui_liveness_runtime_surface,
-)
-from .product_web_search_capability_gate_pr9_3 import (
-    install_browser_owned_web_search_capability_gate,
-)
 
 _PR93_PRODUCT_OBSERVATION_GATE_MARKER = "__pr93_product_observation_gate__"
-
-# PR9.3 operation classification prefers explicit normalized product operations
-# over coarse activity kinds derived from tool names. This matters for product
-# operations such as calculator/weather that may travel through ``web.run``.
-install_product_activity_kind_precedence()
-
-# PR9.3 live characterization proved the revision-safe browser-owned search
-# observation path. Install the provider-aware capability declaration alongside
-# the observation runtime gate so legacy providers without that channel remain
-# UNKNOWN instead of inheriting the production claim.
-install_browser_owned_web_search_capability_gate()
-
-# PR9.4 freezes the already-live-proven PR9.2 rich-input capability claims for the
-# unchanged ProductModelProfileProvider write/RPC path. Custom/legacy providers
-# remain conservative rather than inheriting image/file/multimodal authority from
-# the browser-owned transport identity alone.
-install_browser_owned_rich_input_capability_gate()
-
-# PR11.4 is an optional extension above the frozen ProductWriteTransport schema-1
-# protocol. Install its high-level methods deterministically whenever the product
-# runtime gate is imported, independent of which concrete transport is assembled
-# first. Unsupported transports then fail closed from the method rather than
-# changing the presence of the public runtime method with import order.
-install_product_submission_runtime_surface(ChatGPTProductRuntime)
-
-# PR11.5 adds a browser-UI observation extension without widening the frozen
-# ProductWriteTransport operation set. It is deliberately observation-only:
-# no Browser Authority lane, canonical read, navigation, write, or retry authority.
-install_product_ui_liveness_runtime_surface(ChatGPTProductRuntime)
 
 
 def gate_product_runtime_send_text_observed(
@@ -64,16 +21,15 @@ def gate_product_runtime_send_text_observed(
     privacy-filtered values. A transport cannot acquire typed-observation authority
     by pre-populating ``ProductRuntimeExecution.observations`` itself.
 
-    PR10.0 extends the collector with explicit connector/required-action lifecycle
-    events. Those observations remain evidence only: they cannot authorize a
-    connector, approve an action, mutate a workspace, retry a write, or change
-    canonical finality. The bounded api_tool router-shape diagnostic stays only on
-    the caller event stream and is recognized without becoming public observation
-    authority or being counted as an unexplained dropped event.
+    The function is intentionally side-effect-free at import/composition time.
+    Historical activity precedence, browser-owned capability graduation, submission
+    lifecycle, and UI-liveness ownership now live in their intrinsic modules/classes
+    rather than being installed as a consequence of importing this gate.
 
-    PR10.1 additionally accepts generated-artifact point evidence only when the
-    product supplies an explicit artifact/file/asset id. Artifact observation never
-    grants download, local-path, overwrite, retry, or canonical-finality authority.
+    Canonical source/citation observation still uses the historical runtime-time
+    compatibility gate. That gate is installed only when an observed execution is
+    actually requested; eliminating that call-time patch is outside PR12.3's
+    import-time mutation scope.
     """
 
     if getattr(send_text_observed, _PR93_PRODUCT_OBSERVATION_GATE_MARKER, False):
@@ -86,10 +42,6 @@ def gate_product_runtime_send_text_observed(
         *args: Any,
         **kwargs: Any,
     ) -> ProductRuntimeExecution:
-        # PR9.3 canonical provenance uses the same already-performed browser-owned
-        # canonical readback payload. The installer only adds observation taps
-        # around that path; it does not add reads, change finality, or acquire
-        # write/retry authority.
         from .canonical_product_observation_gate_pr9_3 import (
             install_canonical_product_observation_gate,
         )
@@ -113,7 +65,8 @@ def gate_product_runtime_send_text_observed(
         execution = send_text_observed(self, text, *args, **kwargs)
         if not isinstance(execution, ProductRuntimeExecution):
             raise TypeError(
-                "ChatGPTProductRuntime.send_text_observed() must return ProductRuntimeExecution"
+                "ChatGPTProductRuntime.send_text_observed() must return "
+                "ProductRuntimeExecution"
             )
 
         return replace(

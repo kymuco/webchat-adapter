@@ -14,6 +14,20 @@ MODULE_ATTRIBUTE_ASSIGNMENT = re.compile(r"^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+\s*="
 TOP_LEVEL_SETATTR = re.compile(r"^setattr\(")
 TOP_LEVEL_INSTALL = re.compile(r"^install_[A-Za-z0-9_]\w*\(")
 ALLOW_MARKER = "engineering-quality: allow-import-time-mutation"
+LEGACY_RELOCATION_SOURCES = {
+    "src/chatgpt_web_adapter/legacy_client_core.py": (
+        "src/chatgpt_web_adapter/client.py"
+    ),
+    "src/chatgpt_web_adapter/browserless_request_transport_core.py": (
+        "src/chatgpt_web_adapter/browserless_request_transport.py"
+    ),
+    "src/chatgpt_web_adapter/browser_owned_product_transport_core.py": (
+        "src/chatgpt_web_adapter/browser_owned_product_transport.py"
+    ),
+    "src/chatgpt_web_adapter/product_runtime_core.py": (
+        "src/chatgpt_web_adapter/product_runtime.py"
+    ),
+}
 
 
 def _git(*args: str) -> str:
@@ -23,6 +37,16 @@ def _git(*args: str) -> str:
         check=True,
         capture_output=True,
         text=True,
+    )
+    return completed.stdout
+
+
+def _git_bytes(*args: str) -> bytes:
+    completed = subprocess.run(
+        ["git", *args],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
     )
     return completed.stdout
 
@@ -49,6 +73,33 @@ def _changed_python_files(base_ref: str) -> list[str]:
         for path in paths
         if Path(path).suffix.lower() == ".py" and (ROOT / path).is_file()
     ]
+
+
+def _byte_identical_legacy_relocations(
+    base_ref: str,
+    files: list[str],
+) -> set[str]:
+    relocated: set[str] = set()
+    for path in files:
+        source = LEGACY_RELOCATION_SOURCES.get(path)
+        if source is None:
+            continue
+        try:
+            base_bytes = _git_bytes("show", f"{base_ref}:{source}")
+        except subprocess.CalledProcessError:
+            continue
+        if (ROOT / path).read_bytes() == base_bytes:
+            relocated.add(path)
+    return relocated
+
+
+def _python_quality_targets(base_ref: str) -> list[str]:
+    files = _changed_python_files(base_ref)
+    relocated = _byte_identical_legacy_relocations(base_ref, files)
+    for path in sorted(relocated):
+        source = LEGACY_RELOCATION_SOURCES[path]
+        print(f"ruff relocation grandfather: {path} == {base_ref}:{source}")
+    return [path for path in files if path not in relocated]
 
 
 def _run_python_quality(files: list[str]) -> bool:
@@ -130,7 +181,7 @@ def main() -> int:
     args = parser.parse_args()
     base_ref = _resolve_base_ref(args.base_ref)
 
-    python_quality_passed = _run_python_quality(_changed_python_files(base_ref))
+    python_quality_passed = _run_python_quality(_python_quality_targets(base_ref))
 
     violations: list[str] = []
     for path in _added_production_files(base_ref):

@@ -22,7 +22,7 @@ def test_patch_protocol_matches_existing_product_stream_parser_contract() -> Non
     overlay = (
         root / "service_worker_safe_browser_response_patch_protocol_pr8_9.js"
     ).read_text(encoding="utf-8")
-    client = (root.parent / "client.py").read_text(encoding="utf-8")
+    client = (root.parent / "legacy_client_core.py").read_text(encoding="utf-8")
 
     for token in (
         'payload.v',
